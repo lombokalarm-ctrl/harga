@@ -1,0 +1,4 @@
+hotel,city,star,double,triple,quard,currency,valid from,valid until,status
+Anjum Makkah,Makkah,5,220,190,175,USD,2026-01-01,2026-12-31,active
+Al Safa Preview,Makkah,5,210,185,170,USD,2026-09-01,2026-12-31,active
+,Madinah,4,150,135,120,USD,2026-09-01,2026-12-31,active
