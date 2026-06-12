@@ -11,8 +11,10 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
+    // This app uses bearer tokens from the frontend login flow, not Sanctum's
+    // stateful SPA cookie mode, so the API should remain stateless.
     ->withMiddleware(function (Middleware $middleware): void {
-        $middleware->statefulApi();
+        //
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //
