@@ -262,6 +262,23 @@ export interface CostingSummary {
 
 export interface OccupancyRow extends CostingSummary {}
 
+export interface CostingSnapshot {
+  id: number;
+  label: string | null;
+  notes: string | null;
+  is_manual: boolean;
+  generated_jamaah: number | null;
+  generated_margin_percent: number | null;
+  generated_target_profit_total: number | null;
+  total_cost: number;
+  hpp_per_jamaah: number;
+  harga_jual_per_jamaah: number | null;
+  profit_total: number | null;
+  payload_json: CostingSummary;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface DashboardData {
   cards: {
     total_cost: number;

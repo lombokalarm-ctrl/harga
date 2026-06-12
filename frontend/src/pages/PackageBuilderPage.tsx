@@ -3,9 +3,21 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LoaderCircle } from "lucide-react";
+import { LoaderCircle, Pencil, Save, Trash2, X } from "lucide-react";
 import { packageTemplates } from "@/data/demo";
-import { createPackage, duplicatePackage, getLookups, getPackage, getPackages, publishPackage, updatePackage } from "@/lib/api";
+import {
+  createCostingSnapshot,
+  createPackage,
+  deleteCostingSnapshot,
+  duplicatePackage,
+  getCostingSnapshots,
+  getLookups,
+  getPackage,
+  getPackages,
+  publishPackage,
+  updateCostingSnapshot,
+  updatePackage,
+} from "@/lib/api";
 import { calculateDraftCosting } from "@/lib/costing";
 import { mapPackageToDraft } from "@/lib/mappers";
 import { formatCurrency } from "@/lib/format";
@@ -15,7 +27,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ItineraryBoard } from "@/components/packages/ItineraryBoard";
-import type { PackageDraft } from "@/types/domain";
+import type { CostingSnapshot, PackageDraft } from "@/types/domain";
 
 const schema = z.object({
   nama_paket: z.string().min(3),
@@ -73,6 +85,15 @@ function roomLabel(occupancy: number) {
 function formatValidDate(value?: string | null) {
   if (!value) return "-";
   return value.slice(0, 10);
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return "-";
+
+  return new Intl.DateTimeFormat("id-ID", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
 }
 
 function normalizeDate(value?: string | null) {
@@ -185,6 +206,8 @@ export default function PackageBuilderPage() {
   const pushToast = useUiStore((state) => state.pushToast);
   const [activeTab, setActiveTab] = useState<BuilderTab>("package");
   const [packageListTab, setPackageListTab] = useState<PackageListTab>("published");
+  const [snapshotForm, setSnapshotForm] = useState({ label: "", notes: "" });
+  const [editingSnapshotId, setEditingSnapshotId] = useState<number | null>(null);
   const selectedPackageId = useAppStore((state) => state.selectedPackageId);
   const setSelectedPackageId = useAppStore((state) => state.setSelectedPackageId);
   const draft = useAppStore((state) => state.packageDraft);
@@ -202,6 +225,11 @@ export default function PackageBuilderPage() {
   const packageQuery = useQuery({
     queryKey: ["package", selectedPackageId],
     queryFn: () => getPackage(selectedPackageId as number),
+    enabled: Boolean(selectedPackageId),
+  });
+  const snapshotsQuery = useQuery({
+    queryKey: ["package-snapshots", selectedPackageId],
+    queryFn: () => getCostingSnapshots(selectedPackageId as number),
     enabled: Boolean(selectedPackageId),
   });
 
@@ -383,6 +411,98 @@ export default function PackageBuilderPage() {
       pushToast({ title: "Paket diduplikasi", description: `${resource.nama_paket} siap diedit sebagai paket baru.`, variant: "info" });
     },
   });
+  const createSnapshotMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedPackageId) {
+        throw new Error("Simpan draft paket terlebih dahulu sebelum membuat snapshot costing.");
+      }
+
+      return createCostingSnapshot(selectedPackageId, {
+        label: snapshotForm.label.trim() || undefined,
+        notes: snapshotForm.notes.trim() || undefined,
+        jamaah: Number(values.target_jamaah ?? draft?.target_jamaah ?? 0) || undefined,
+        margin_percent: Number(values.default_margin_percent ?? draft?.default_margin_percent ?? 0),
+        target_profit_total: Number(values.target_profit_total ?? draft?.target_profit_total ?? 0),
+      });
+    },
+    onSuccess: (snapshot) => {
+      queryClient.invalidateQueries({ queryKey: ["package-snapshots", selectedPackageId] });
+      setSnapshotForm({ label: "", notes: "" });
+      pushToast({ title: "Snapshot costing tersimpan", description: `${snapshot.label ?? "Snapshot manual"} berhasil dibuat.`, variant: "success" });
+    },
+    onError: (error) => {
+      pushToast({ title: "Snapshot gagal dibuat", description: error instanceof Error ? error.message : "Terjadi kendala saat membuat snapshot costing.", variant: "error" });
+    },
+  });
+  const updateSnapshotMutation = useMutation({
+    mutationFn: async (payload: { snapshotId: number; label: string; notes: string }) => {
+      if (!selectedPackageId) {
+        throw new Error("Paket belum dipilih.");
+      }
+
+      return updateCostingSnapshot(selectedPackageId, payload.snapshotId, {
+        label: payload.label,
+        notes: payload.notes || undefined,
+      });
+    },
+    onSuccess: (snapshot) => {
+      queryClient.invalidateQueries({ queryKey: ["package-snapshots", selectedPackageId] });
+      setEditingSnapshotId(null);
+      setSnapshotForm({ label: "", notes: "" });
+      pushToast({ title: "Snapshot costing diperbarui", description: `${snapshot.label ?? "Snapshot manual"} berhasil diperbarui.`, variant: "success" });
+    },
+  });
+  const deleteSnapshotMutation = useMutation({
+    mutationFn: async (snapshotId: number) => {
+      if (!selectedPackageId) {
+        throw new Error("Paket belum dipilih.");
+      }
+
+      return deleteCostingSnapshot(selectedPackageId, snapshotId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["package-snapshots", selectedPackageId] });
+      if (editingSnapshotId) {
+        setEditingSnapshotId(null);
+        setSnapshotForm({ label: "", notes: "" });
+      }
+      pushToast({ title: "Snapshot costing dihapus", description: "Versi costing manual berhasil dihapus.", variant: "success" });
+    },
+  });
+
+  useEffect(() => {
+    setEditingSnapshotId(null);
+    setSnapshotForm({ label: "", notes: "" });
+  }, [selectedPackageId]);
+
+  const startEditingSnapshot = (snapshot: CostingSnapshot) => {
+    setEditingSnapshotId(snapshot.id);
+    setSnapshotForm({
+      label: snapshot.label ?? "",
+      notes: snapshot.notes ?? "",
+    });
+  };
+
+  const cancelSnapshotEditing = () => {
+    setEditingSnapshotId(null);
+    setSnapshotForm({ label: "", notes: "" });
+  };
+
+  const submitSnapshot = () => {
+    const label = snapshotForm.label.trim();
+    const notes = snapshotForm.notes.trim();
+
+    if (editingSnapshotId) {
+      updateSnapshotMutation.mutate({
+        snapshotId: editingSnapshotId,
+        label: label || "Snapshot manual",
+        notes,
+      });
+      return;
+    }
+
+    createSnapshotMutation.mutate();
+  };
 
   const toggleSelection = (key: "transport_ids" | "guide_ids" | "cost_component_ids", id: number) => {
     if (!draft) return;
@@ -412,6 +532,9 @@ export default function PackageBuilderPage() {
   if (!lookups || !draft) {
     return <Card>Data paket belum tersedia dari backend.</Card>;
   }
+
+  const manualSnapshots = snapshotsQuery.data ?? [];
+  const snapshotMutationPending = createSnapshotMutation.isPending || updateSnapshotMutation.isPending;
 
   const activeHotelMakkah = filteredHotelMakkahOptions.find((item) => item.id === Number(values.hotel_makkah_id ?? draft.hotel_makkah_id));
   const activeHotelMadinah = filteredHotelMadinahOptions.find((item) => item.id === Number(values.hotel_madinah_id ?? draft.hotel_madinah_id));
@@ -860,19 +983,116 @@ export default function PackageBuilderPage() {
           <h3 className="font-serif text-2xl">Costing Summary</h3>
           <p className="mt-2 text-sm text-slate-200">Ringkasan realtime menggunakan basis fare hotel dan masa berlaku tarif dari backend.</p>
           {localCosting ? (
-            <div className="mt-6 space-y-3 text-sm">
-              <div className="flex justify-between"><span>Basis Fare</span><strong>{localCosting.basisFare}</strong></div>
-              <div className="flex justify-between"><span>Total Hotel</span><strong>{formatCurrency(localCosting.totalHotel)}</strong></div>
-              <div className="flex justify-between"><span>Total Tiket</span><strong>{formatCurrency(localCosting.totalTiket)}</strong></div>
-              <div className="flex justify-between"><span>Total Visa</span><strong>{formatCurrency(localCosting.totalVisa)}</strong></div>
-              <div className="flex justify-between"><span>Biaya Jamaah</span><strong>{formatCurrency(localCosting.totalBiayaJamaah)}</strong></div>
-              <div className="flex justify-between"><span>Biaya Grup</span><strong>{formatCurrency(localCosting.totalBiayaGrup)}</strong></div>
-              <div className="flex justify-between"><span>Komisi Agen</span><strong>{formatCurrency(localCosting.totalKomisi)}</strong></div>
-              <div className="mt-4 border-t border-white/10 pt-4">
-                <div className="flex justify-between"><span>Total Cost</span><strong>{formatCurrency(localCosting.totalCost)}</strong></div>
-                <div className="mt-2 flex justify-between"><span>HPP / Jamaah</span><strong>{formatCurrency(localCosting.hpp)}</strong></div>
-                <div className="mt-2 flex justify-between"><span>Harga Jual</span><strong>{formatCurrency(localCosting.hargaJual)}</strong></div>
-                <div className="mt-2 flex justify-between"><span>Profit Total</span><strong>{formatCurrency(localCosting.profitTotal)}</strong></div>
+            <div className="mt-6 space-y-5 text-sm">
+              <div className="space-y-3">
+                <div className="flex justify-between"><span>Basis Fare</span><strong>{localCosting.basisFare}</strong></div>
+                <div className="flex justify-between"><span>Total Hotel</span><strong>{formatCurrency(localCosting.totalHotel)}</strong></div>
+                <div className="flex justify-between"><span>Total Tiket</span><strong>{formatCurrency(localCosting.totalTiket)}</strong></div>
+                <div className="flex justify-between"><span>Total Visa</span><strong>{formatCurrency(localCosting.totalVisa)}</strong></div>
+                <div className="flex justify-between"><span>Biaya Jamaah</span><strong>{formatCurrency(localCosting.totalBiayaJamaah)}</strong></div>
+                <div className="flex justify-between"><span>Biaya Grup</span><strong>{formatCurrency(localCosting.totalBiayaGrup)}</strong></div>
+                <div className="flex justify-between"><span>Komisi Agen</span><strong>{formatCurrency(localCosting.totalKomisi)}</strong></div>
+                <div className="mt-4 border-t border-white/10 pt-4">
+                  <div className="flex justify-between"><span>Total Cost</span><strong>{formatCurrency(localCosting.totalCost)}</strong></div>
+                  <div className="mt-2 flex justify-between"><span>HPP / Jamaah</span><strong>{formatCurrency(localCosting.hpp)}</strong></div>
+                  <div className="mt-2 flex justify-between"><span>Harga Jual</span><strong>{formatCurrency(localCosting.hargaJual)}</strong></div>
+                  <div className="mt-2 flex justify-between"><span>Profit Total</span><strong>{formatCurrency(localCosting.profitTotal)}</strong></div>
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h4 className="font-medium text-gold-200">Snapshot Costing Manual</h4>
+                    <p className="mt-1 text-xs text-slate-200">
+                      Simpan versi costing yang sudah jadi sebagai arsip. Gunakan setelah draft paket tersimpan agar angka snapshot konsisten dengan data backend.
+                    </p>
+                  </div>
+                  <Badge>{manualSnapshots.length} Snapshot</Badge>
+                </div>
+
+                <div className="mt-4 space-y-3">
+                  <label className="block space-y-2 text-xs uppercase tracking-[0.2em] text-slate-300">
+                    <span>Label Snapshot</span>
+                    <input
+                      value={snapshotForm.label}
+                      onChange={(event) => setSnapshotForm((current) => ({ ...current, label: event.target.value }))}
+                      placeholder="Contoh: Versi margin 15% - Juni"
+                      className="w-full rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm normal-case tracking-normal text-white outline-none placeholder:text-slate-400"
+                    />
+                  </label>
+                  <label className="block space-y-2 text-xs uppercase tracking-[0.2em] text-slate-300">
+                    <span>Catatan</span>
+                    <textarea
+                      value={snapshotForm.notes}
+                      onChange={(event) => setSnapshotForm((current) => ({ ...current, notes: event.target.value }))}
+                      placeholder="Catatan internal untuk membedakan versi costing ini."
+                      rows={3}
+                      className="w-full rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm normal-case tracking-normal text-white outline-none placeholder:text-slate-400"
+                    />
+                  </label>
+                </div>
+
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <Button type="button" onClick={submitSnapshot} disabled={!selectedPackageId || snapshotMutationPending}>
+                    {snapshotMutationPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    {editingSnapshotId ? "Perbarui Snapshot" : "Simpan Snapshot"}
+                  </Button>
+                  {editingSnapshotId ? (
+                    <Button type="button" variant="secondary" onClick={cancelSnapshotEditing}>
+                      <X className="h-4 w-4" />
+                      Batal Edit
+                    </Button>
+                  ) : null}
+                </div>
+
+                {snapshotsQuery.isLoading ? (
+                  <div className="mt-4 flex items-center gap-2 text-xs text-slate-300">
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                    Memuat snapshot costing...
+                  </div>
+                ) : manualSnapshots.length > 0 ? (
+                  <div className="mt-4 space-y-3">
+                    {manualSnapshots.map((snapshot) => (
+                      <div key={snapshot.id} className="rounded-2xl border border-white/10 bg-white/10 p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-medium text-gold-100">{snapshot.label || "Snapshot manual"}</p>
+                            <p className="mt-1 text-xs text-slate-300">{formatDateTime(snapshot.created_at)}</p>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button type="button" variant="secondary" className="px-3" onClick={() => startEditingSnapshot(snapshot)}>
+                              <Pencil className="h-4 w-4" />
+                              Edit
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              className="px-3"
+                              onClick={() => deleteSnapshotMutation.mutate(snapshot.id)}
+                              disabled={deleteSnapshotMutation.isPending}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              Hapus
+                            </Button>
+                          </div>
+                        </div>
+                        {snapshot.notes ? <p className="mt-2 text-sm text-slate-200">{snapshot.notes}</p> : null}
+                        <div className="mt-3 grid gap-2 text-xs text-slate-200 md:grid-cols-2">
+                          <div className="flex justify-between gap-3"><span>Jamaah</span><strong>{snapshot.generated_jamaah ?? "-"}</strong></div>
+                          <div className="flex justify-between gap-3"><span>Margin</span><strong>{snapshot.generated_margin_percent ?? 0}%</strong></div>
+                          <div className="flex justify-between gap-3"><span>HPP / Jamaah</span><strong>{formatCurrency(snapshot.hpp_per_jamaah)}</strong></div>
+                          <div className="flex justify-between gap-3"><span>Harga Jual</span><strong>{formatCurrency(snapshot.harga_jual_per_jamaah ?? 0)}</strong></div>
+                          <div className="flex justify-between gap-3 md:col-span-2"><span>Profit Total</span><strong>{formatCurrency(snapshot.profit_total ?? 0)}</strong></div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-4 rounded-2xl border border-dashed border-white/10 px-4 py-3 text-xs text-slate-300">
+                    Belum ada snapshot manual. Simpan versi costing yang sudah stabil untuk arsip, review, atau perbandingan.
+                  </div>
+                )}
               </div>
             </div>
           ) : <p className="mt-4 text-sm text-slate-200">Pilih paket lengkap untuk melihat ringkasan costing.</p>}

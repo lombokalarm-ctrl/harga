@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\V1\ExchangeRateController;
 use App\Http\Controllers\Api\V1\GuideController;
 use App\Http\Controllers\Api\V1\HotelController;
 use App\Http\Controllers\Api\V1\PackageController;
+use App\Http\Controllers\Api\V1\PackageSnapshotController;
 use App\Http\Controllers\Api\V1\TransportController;
 use App\Http\Controllers\Api\V1\VisaController;
 use Illuminate\Support\Facades\Route;
@@ -63,6 +64,10 @@ Route::prefix('v1')->group(function () {
         Route::post('/packages/{package}/simulations/bep', [PackageController::class, 'bep']);
         Route::post('/packages/{package}/proposal/pdf', [PackageController::class, 'proposalPdf']);
         Route::post('/packages/{package}/proposal/xlsx', [PackageController::class, 'proposalSpreadsheet']);
+        Route::get('/packages/{package}/snapshots', [PackageSnapshotController::class, 'index']);
+        Route::post('/packages/{package}/snapshots', [PackageSnapshotController::class, 'store']);
+        Route::put('/packages/{package}/snapshots/{snapshot}', [PackageSnapshotController::class, 'update']);
+        Route::delete('/packages/{package}/snapshots/{snapshot}', [PackageSnapshotController::class, 'destroy']);
         Route::apiResource('packages', PackageController::class);
     });
 });

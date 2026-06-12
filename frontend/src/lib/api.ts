@@ -5,6 +5,7 @@ import type {
   ApiResponse,
   AuditLog,
   CostComponent,
+  CostingSnapshot,
   CostingSummary,
   DashboardData,
   ExchangeRate,
@@ -273,6 +274,29 @@ export async function duplicatePackage(id: number) {
 export async function getCosting(id: number, params?: { jamaah?: number; margin_percent?: number; target_profit_total?: number }) {
   const response = await api.get<ApiResponse<CostingSummary>>(`/packages/${id}/costing`, { params });
   return unwrap(response);
+}
+
+export async function getCostingSnapshots(id: number) {
+  const response = await api.get<ApiResponse<CostingSnapshot[]>>(`/packages/${id}/snapshots`);
+  return unwrap(response);
+}
+
+export async function createCostingSnapshot(
+  id: number,
+  payload: { label?: string; notes?: string; jamaah?: number; margin_percent?: number; target_profit_total?: number }
+) {
+  const response = await api.post<ApiResponse<CostingSnapshot>>(`/packages/${id}/snapshots`, payload);
+  return unwrap(response);
+}
+
+export async function updateCostingSnapshot(id: number, snapshotId: number, payload: { label: string; notes?: string }) {
+  const response = await api.put<ApiResponse<CostingSnapshot>>(`/packages/${id}/snapshots/${snapshotId}`, payload);
+  return unwrap(response);
+}
+
+export async function deleteCostingSnapshot(id: number, snapshotId: number) {
+  const response = await api.delete<ApiResponse<null>>(`/packages/${id}/snapshots/${snapshotId}`);
+  return response.data;
 }
 
 export async function getOccupancy(id: number, payload?: { margin_percent?: number; target_profit_total?: number }) {

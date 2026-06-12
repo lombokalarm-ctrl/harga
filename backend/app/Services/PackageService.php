@@ -100,11 +100,49 @@ class PackageService
 
         $freshPackage->snapshots()->create([
             'exchange_rate_id' => $this->exchangeRates->active()?->id,
+            'label' => null,
+            'notes' => null,
+            'is_manual' => false,
+            'generated_jamaah' => $costing['jumlah_jamaah'],
+            'generated_margin_percent' => $costing['margin_percent'],
+            'generated_target_profit_total' => $costing['target_profit_total'],
+            'created_by' => $freshPackage->updated_by ?? $freshPackage->created_by,
             'payload_json' => $costing,
             'total_cost' => $costing['total_cost'],
             'hpp_per_jamaah' => $costing['hpp_per_jamaah'],
             'harga_jual_per_jamaah' => $costing['harga_jual_per_jamaah'],
             'profit_total' => $costing['profit_total'],
         ]);
+    }
+
+    public function createManualSnapshot(UmrahPackage $package, array $payload, ?int $userId = null)
+    {
+        $freshPackage = $this->find((int) $package->id);
+        $costing = $this->costing(
+            $freshPackage,
+            isset($payload['jamaah']) ? (int) $payload['jamaah'] : null,
+            isset($payload['margin_percent']) ? (float) $payload['margin_percent'] : null,
+            isset($payload['target_profit_total']) ? (float) $payload['target_profit_total'] : null,
+        );
+
+        $snapshot = $freshPackage->snapshots()->create([
+            'exchange_rate_id' => $this->exchangeRates->active()?->id,
+            'label' => $payload['label'] ?: 'Snapshot '.now()->format('d M Y H:i'),
+            'notes' => $payload['notes'] ?? null,
+            'is_manual' => true,
+            'generated_jamaah' => $costing['jumlah_jamaah'],
+            'generated_margin_percent' => $costing['margin_percent'],
+            'generated_target_profit_total' => $costing['target_profit_total'],
+            'created_by' => $userId,
+            'payload_json' => $costing,
+            'total_cost' => $costing['total_cost'],
+            'hpp_per_jamaah' => $costing['hpp_per_jamaah'],
+            'harga_jual_per_jamaah' => $costing['harga_jual_per_jamaah'],
+            'profit_total' => $costing['profit_total'],
+        ]);
+
+        $this->auditLogService->log('package_snapshots', 'create', $snapshot, 'Snapshot costing manual dibuat');
+
+        return $snapshot->fresh();
     }
 }

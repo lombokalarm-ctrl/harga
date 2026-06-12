@@ -12,6 +12,13 @@ class PackageSnapshot extends Model
     protected $fillable = [
         'umrah_package_id',
         'exchange_rate_id',
+        'label',
+        'notes',
+        'is_manual',
+        'generated_jamaah',
+        'generated_margin_percent',
+        'generated_target_profit_total',
+        'created_by',
         'payload_json',
         'total_cost',
         'hpp_per_jamaah',
@@ -22,11 +29,25 @@ class PackageSnapshot extends Model
     protected function casts(): array
     {
         return [
+            'is_manual' => 'boolean',
+            'generated_jamaah' => 'integer',
+            'generated_margin_percent' => 'decimal:2',
+            'generated_target_profit_total' => 'decimal:2',
             'payload_json' => 'array',
             'total_cost' => 'decimal:2',
             'hpp_per_jamaah' => 'decimal:2',
             'harga_jual_per_jamaah' => 'decimal:2',
             'profit_total' => 'decimal:2',
         ];
+    }
+
+    public function package()
+    {
+        return $this->belongsTo(UmrahPackage::class, 'umrah_package_id');
+    }
+
+    public function creator()
+    {
+        return $this->belongsTo(User::class, 'created_by');
     }
 }
